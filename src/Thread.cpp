@@ -103,3 +103,14 @@ Burst Thread::getNextBurst() {
 	bursts.erase(bursts.begin());
 	return b;
 }
+
+Burst Thread::getTopBurst() {
+	Burst b = bursts[0];
+	return b;
+}
+
+void Thread::updateBurst(int q) {
+	Burst new_burst(bursts[0].getCPU() - q, bursts[0].getIO());
+	bursts[0] = new_burst;
+
+}

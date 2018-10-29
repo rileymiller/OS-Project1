@@ -42,5 +42,7 @@ class Thread {
 		void addIOTime(int t);
 		void setResponseTime(int curr_time);
 		Burst getNextBurst();
+		Burst getTopBurst();
+		void updateBurst(int q);
 };
 #endif

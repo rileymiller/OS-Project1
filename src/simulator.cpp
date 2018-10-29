@@ -181,8 +181,182 @@ void printFlagInstructions() {
 	cout << "  Display a help message about these flags and exit" << endl << endl;
 }
 
+//implement Round Robin algorithm
+void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, vector<Event>, less<Event>> &events, int TIME, int p_switch_overhead, int t_switch_overhead, bool VERBOSE, bool PER_THREAD) {
+	bool thread_running = false;
+	Thread c_thd(-1,-1,-1, -1, "");
+	int last_ptype = -1;
+	int count = 0;
+	int service_time = 0;
+	int io_time = 0;
+	int dispatch_time = 0;
+	int idle_time = 0;
+	int QUANTUM = 3;
+	bool event_dispatched_on_complete = false;
+
+	while(!events.empty()) {
+		count++;
+		if(!thread_running && getNumAvailableThreads(processes)){
+		  //get next thread from the queue
+		  c_thd = fcfs.front();
+		  fcfs.pop();
+		  int NUM_THD_AV = 0;
+		  NUM_THD_AV = getNumAvailableThreads(processes); 
+		  thread_running = true;
+		  
+		  if(!event_dispatched_on_complete) {
+		  	//dispatch event
+		  	Event dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV); 
+		  	events.push(dispatch);
+		  } else {
+				event_dispatched_on_complete = false;
+		  }
+
+ 	   //determine if it's a thread or a process switch
+		  if(c_thd.getPType() != last_ptype) {
+		  //dispatch process switch
+			TIME += p_switch_overhead;
+			dispatch_time += p_switch_overhead;
+		  	Event p_switch("PROCESS_DISPATCH_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+			events.push(p_switch);
+			last_ptype = c_thd.getPType();
+		  } else {			
+			TIME += t_switch_overhead;
+			dispatch_time += t_switch_overhead;
+		  	Event t_switch("THREAD_DISPATCH_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+			events.push(t_switch);
+		  }
+
+		  /**
+			 * Need to handle RR burst, will pass RR quantum, update vector of burts and return whether cpuBurstCompleted
+			 * 
+			 **/
+		  Burst c_burst = c_thd.getTopBurst();
+		  int cpu = c_burst.getCPU();
+		  int io = c_burst.getIO();
+
+			if(cpu > QUANTUM) {
+				//going to dispatch a THREAD_PREEMPTED event, need to update Thread state
+				c_thd.updateBurst(QUANTUM);
+				cpu = QUANTUM;
+				TIME += cpu;
+				service_time += cpu;
+				Event cpu_complete("THREAD_PREEMPTED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+				events.push(cpu_complete);		   
+				processes[c_thd.getPType()].updateThreadCPUTime(c_thd.getTID(), cpu);
+				processes[c_thd.getPType()].updateThreadState(c_thd.getTID(), "THREAD_BLOCKED");
+			} else {
+				//CPU_BURST_COMPLETED && IO_BURST_COMPLETED
+				c_burst = c_thd.getNextBurst();
+				cpu = c_burst.getCPU();
+				cpu = c_burst.getIO();
+		  
+					if(c_thd.getNumBursts() == 0) {
+						processes[c_thd.getPType()].updateThreadState(c_thd.getTID(), "THREAD_COMPLETED");
+									
+						processes[c_thd.getPType()].updateThreadCPUTime(c_thd.getTID(), cpu);
+									
+						TIME += cpu;
+						service_time += cpu;
+						Event t_complete("THREAD_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+						events.push(t_complete);
+					} else {
+					//create cpu_burst_completed and io_burst_completed events
+						TIME += cpu;
+						service_time += cpu;
+						Event cpu_complete("CPU_BURST_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+						events.push(cpu_complete);		   
+						processes[c_thd.getPType()].updateThreadCPUTime(c_thd.getTID(), cpu);
+						TIME += io;
+						io_time += io;
+						Event io_complete("IO_BURST_COMPLETED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+						events.push(io_complete);
+						processes[c_thd.getPType()].updateThreadIOTime(c_thd.getTID(), io);
+						fcfs.push(c_thd);
+				} 
+			}
+			
+
+
+		}
+		
+		Event curr = events.top();
+		events.pop();
+		//based on type of event needs to update time and state of thread
+		if(curr.getType() == "CPU_BURST_COMPLETED") {
+		  //whatever happens when a CPU burst completes
+		  thread_running = false;
+		  TIME = curr.getTime();
+		  processes[curr.getPType()].updateThreadState(curr.getTID(), "BLOCKED");	
+//		 if(processes[curr.getPType()].getThread(curr.getTID()).getResponseTime() == 0) {
+		  //update thread response time
+//		   processes[curr.getPType()].updateThreadResponseTime(curr.getTID(), TIME);
+//		}
+		
+		if(getNumAvailableThreads(processes) == 0) {
+			Event idle_next_event = events.top();
+			int beg_time = curr.getTime();
+			int end_time = idle_next_event.getTime();
+			idle_time += (end_time - beg_time);
+		  }
+		} else if(curr.getType() == "THREAD_COMPLETED") {
+		  //thread completed, update time and thread state
+
+
+		  thread_running = false;
+		  TIME = curr.getTime();
+		  processes[curr.getPType()].updateThreadState(curr.getTID(), "EXIT");	
+		  
+		  processes[curr.getPType()].updateThreadEndTime(curr.getTID(), TIME);	
+		  
+		if(getNumAvailableThreads(processes) > 0 && events.empty()) {
+		  	event_dispatched_on_complete = true;
+		  	c_thd = fcfs.front();
+			Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), getNumAvailableThreads(processes));
+			events.push(next_dispatch);
+		  }
+		} else if(curr.getType() == "IO_BURST_COMPLETED") {
+		  if(getNumAvailableThreads(processes) < 1) {
+		    //going to handle idle time here potentially
+		    TIME = curr.getTime();
+		    
+		    event_dispatched_on_complete = true;
+		    c_thd = fcfs.front();
+		    Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), getNumAvailableThreads(processes));
+		    events.push(next_dispatch);
+		  }  
+		
+		//io burst completed, change state of thread to READY
+		  processes[curr.getPType()].updateThreadState(curr.getTID(), "READY");
+		} else if(curr.getType() == "PROCESS_DISPATCH_COMPLETED" || curr.getType() == "THREAD_DISPATCH_COMPLETED") {
+		  processes[curr.getPType()].updateThreadState(curr.getTID(), "RUNNING");
+		
+		if(processes[curr.getPType()].getThread(curr.getTID()).getResponseTime() == 0) {
+		  //update thread response time
+		  processes[curr.getPType()].updateThreadResponseTime(curr.getTID(), curr.getTime());
+		  }
+		} else if(curr.getType() == "THREAD_ARRIVED") {
+			processes[curr.getPType()].updateThreadState(curr.getTID(), "READY");
+		}
+		if(VERBOSE) {
+		  cout << curr << endl;
+		}
+
+	
+		if(isSimulationFinished(processes)) {
+		  if(PER_THREAD) {
+	      	    printPerThread(processes);
+		  }
+		  cout << "SIMULATION COMPLETED!" << endl << endl;
+		  printSimulationResults(processes, service_time, io_time, dispatch_time, idle_time, TIME);
+		}	
+
+			
+	}
+} 
+
+//implement first come first serve algorithm
 void FCFS(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, vector<Event>, less<Event>> &events, int TIME, int p_switch_overhead, int t_switch_overhead, bool VERBOSE, bool PER_THREAD) {
-	//implement first come first serve algorithm
 	bool thread_running = false;
 	Thread c_thd(-1,-1,-1, -1, "");
 	int last_ptype = -1;
@@ -337,10 +511,10 @@ void FCFS(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event,
 int main(int argc, char** argv) {
 
 	bool PER_THREAD, VERBOSE = false;
-	string fname;
+	string fname, algorithm;
 
 	//flag handling
-	if(argc > 4) {
+	if(argc > 6) {
 	  cerr << "Too many arguments" << endl;
 	} else if (argc < 2) {
 	  cerr << "Must specify an input file" << endl;
@@ -353,7 +527,7 @@ int main(int argc, char** argv) {
 	    printFlagInstructions();
 	    exit(42);
 	  }
-	 fname = argv[2];
+	  fname = argv[2];
 	} else if(argc == 4) {
 	  if(string(argv[1]) == "-t" || string(argv[1]) == "--per_thread" || string(argv[2]) == "-t" || string(argv[2]) == "--per_thread") {
 		PER_THREAD = true;
@@ -362,10 +536,43 @@ int main(int argc, char** argv) {
 	  }  if(string(argv[1]) == "-h" || string(argv[1]) == "--help" || string(argv[2]) == "-h" || string(argv[2]) == "--help") {
 	    printFlagInstructions();
 	    exit(42);
-	  }
-	 fname = argv[3];
-	} else {
-	 fname = argv[1];
+	  } if (string(argv[1]) == "--algorithm" || string(argv[1]) == "-a") {
+			algorithm = argv[2];
+		}
+	  fname = argv[3];
+	} else if(argc == 5) {
+		if(string(argv[1]) == "-t" || string(argv[1]) == "--per_thread" || string(argv[2]) == "-t" || string(argv[2]) == "--per_thread" || string(argv[3]) == "-t" || string(argv[3]) == "--per_thread") {
+			PER_THREAD = true;
+	  }  if(string(argv[1]) == "-v" || string(argv[1]) == "--verbose" || string(argv[2]) == "-v" || string(argv[2]) == "--verbose" || string(argv[3]) == "-v" || string(argv[3]) == "--verbose") {
+			VERBOSE = true;
+	  }  if(string(argv[1]) == "-h" || string(argv[1]) == "--help" || string(argv[2]) == "-h" || string(argv[2]) == "--help" || string(argv[3]) == "-h" || string(argv[3]) == "--help") {
+	    printFlagInstructions();
+	    exit(42);
+	  } if (string(argv[1]) == "--algorithm" || string(argv[1]) == "-a") {
+			algorithm = argv[2];
+		} if (string(argv[2]) == "--algorithm" || string(argv[2]) == "-a") {
+			algorithm = argv[3];
+		}
+	  fname = argv[4];
+		}
+		else if(argc == 6) {
+		if(string(argv[1]) == "-t" || string(argv[1]) == "--per_thread" || string(argv[2]) == "-t" || string(argv[2]) == "--per_thread" || string(argv[3]) == "-t" || string(argv[3]) == "--per_thread" || string(argv[4]) == "-t" || string(argv[4]) == "--per_thread") {
+			PER_THREAD = true;
+	  }  if(string(argv[1]) == "-v" || string(argv[1]) == "--verbose" || string(argv[2]) == "-v" || string(argv[2]) == "--verbose" || string(argv[3]) == "-v" || string(argv[3]) == "--verbose" || string(argv[4]) == "-v" || string(argv[4]) == "--verbose") {
+			VERBOSE = true;
+	  }  if(string(argv[1]) == "-h" || string(argv[1]) == "--help" || string(argv[2]) == "-h" || string(argv[2]) == "--help" || string(argv[3]) == "-h" || string(argv[3]) == "--help" || string(argv[4]) == "-h" || string(argv[4]) == "--help") {
+	    printFlagInstructions();
+	    exit(42);
+	  } if (string(argv[1]) == "--algorithm" || string(argv[1]) == "-a") {
+			algorithm = argv[2];
+		} if (string(argv[2]) == "--algorithm" || string(argv[2]) == "-a") {
+			algorithm = argv[3];
+		} if (string(argv[3]) == "--algorithm" || string(argv[3]) == "-a") {
+			algorithm = argv[4];
+		}
+	  fname = argv[5];
+		} else {
+	  fname = argv[1];
 	}
 
 	//file opening
@@ -379,7 +586,8 @@ int main(int argc, char** argv) {
 	
 	vector<Process> processes(4);
 	priority_queue<Event, vector<Event>, less<Event>> events;	
-	queue<Thread> fcfs;	
+	queue<Thread> fcfs;
+	queue<Thread> rr;	
 
 	fin >> n_process >> t_switch_overhead >> p_switch_overhead;
 	for(int i = 0; i < n_process; i++) {
@@ -392,7 +600,7 @@ int main(int argc, char** argv) {
 	    int t_arrival_time, nbursts, cpu, io;
 	    fin >> t_arrival_time >> nbursts;
 	    if(j == 0 && i == 0){ //initialize the time variable with first thd arrival
-		TIME = t_arrival_time;
+				TIME = t_arrival_time;
 	    }
 
 	    Thread t(t_arrival_time, j, i, ptype, "NEW");
@@ -411,13 +619,22 @@ int main(int argc, char** argv) {
 		//read in last burst
 		p.addThread(t);//append thread to process
 		fcfs.push(t);
+		rr.push(t);
 	  }
 
 	  processes[ptype] = (p);
 	}
 	fin.close(); 
 	
-	if(true) {
+	if(algorithm == "FCFS") {
+		FCFS(fcfs, processes,events, TIME, p_switch_overhead, t_switch_overhead, VERBOSE, PER_THREAD);
+	} else if (algorithm == "RR") {
+		//call RR function
+	} else if(algorithm == "PRIORITY") {
+		//call PRIORITY function 
+	} else if(algorithm == "CUSTOM") {
+		//call custom function
+	} else {
 		FCFS(fcfs, processes,events, TIME, p_switch_overhead, t_switch_overhead, VERBOSE, PER_THREAD);
 	}
 	
