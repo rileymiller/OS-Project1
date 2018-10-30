@@ -237,14 +237,19 @@ void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, v
 
 			if(cpu > QUANTUM) {
 				//going to dispatch a THREAD_PREEMPTED event, need to update Thread state
-				c_thd.updateBurst(QUANTUM);
+				// c_thd.updateBurst(QUANTUM);
 				cpu = QUANTUM;
 				TIME += cpu;
 				service_time += cpu;
-				Event cpu_complete("THREAD_PREEMPTED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
-				events.push(cpu_complete);		   
+				Event cpu_preempted("THREAD_PREEMPTED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+				events.push(cpu_preempted);		   
 				processes[c_thd.getPType()].updateThreadCPUTime(c_thd.getTID(), cpu);
 				processes[c_thd.getPType()].updateThreadState(c_thd.getTID(), "THREAD_BLOCKED");
+				cout << "CPU Burst before updateBurst: " << c_thd.getTopBurst().getCPU() << endl;
+				c_thd.updateBurst(QUANTUM);
+				cout << "CPU Burst after updateBurst: " << c_thd.getTopBurst().getCPU() << endl;
+				fcfs.push(c_thd);
+				//need to dispatch next thread upon preemption
 			} else {
 				//CPU_BURST_COMPLETED && IO_BURST_COMPLETED
 				c_burst = c_thd.getNextBurst();
@@ -281,6 +286,8 @@ void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, v
 		}
 		
 		Event curr = events.top();
+		cout << "Curr: " << curr << endl;
+		cout << "Event queue size: " << events.size() << endl;
 		events.pop();
 		//based on type of event needs to update time and state of thread
 		if(curr.getType() == "CPU_BURST_COMPLETED") {
@@ -630,6 +637,7 @@ int main(int argc, char** argv) {
 		FCFS(fcfs, processes,events, TIME, p_switch_overhead, t_switch_overhead, VERBOSE, PER_THREAD);
 	} else if (algorithm == "RR") {
 		//call RR function
+		RR(rr, processes,events, TIME, p_switch_overhead, t_switch_overhead, VERBOSE, PER_THREAD);
 	} else if(algorithm == "PRIORITY") {
 		//call PRIORITY function 
 	} else if(algorithm == "CUSTOM") {
