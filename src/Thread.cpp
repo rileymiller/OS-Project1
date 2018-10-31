@@ -112,5 +112,4 @@ Burst Thread::getTopBurst() {
 void Thread::updateBurst(int q) {
 	Burst new_burst(bursts[0].getCPU() - q, bursts[0].getIO());
 	bursts[0] = new_burst;
-
 }

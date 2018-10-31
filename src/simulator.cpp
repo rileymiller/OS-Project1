@@ -102,7 +102,6 @@ int getNumAvailableThreads(vector<Process> &p) {
 		  count++;
 	  }
 	}
-
 	return count;
 }
 
@@ -182,7 +181,7 @@ void printFlagInstructions() {
 }
 
 //implement Round Robin algorithm
-void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, vector<Event>, less<Event>> &events, int TIME, int p_switch_overhead, int t_switch_overhead, bool VERBOSE, bool PER_THREAD) {
+void RR(queue<Thread> &rr, vector<Process> &processes, priority_queue<Event, vector<Event>, less<Event>> &events, int TIME, int p_switch_overhead, int t_switch_overhead, bool VERBOSE, bool PER_THREAD) {
 	bool thread_running = false;
 	Thread c_thd(-1,-1,-1, -1, "");
 	int last_ptype = -1;
@@ -198,15 +197,15 @@ void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, v
 		count++;
 		if(!thread_running && getNumAvailableThreads(processes)){
 		  //get next thread from the queue
-		  c_thd = fcfs.front();
-		  fcfs.pop();
+		  c_thd = rr.front();
+		  rr.pop();
 		  int NUM_THD_AV = 0;
 		  NUM_THD_AV = getNumAvailableThreads(processes); 
 		  thread_running = true;
-		  
+		  processes[c_thd.getPType()].updateThreadState(c_thd.getTID(), "RUNNING");
 		  if(!event_dispatched_on_complete) {
 		  	//dispatch event
-		  	Event dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV); 
+		  	Event dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true); 
 		  	events.push(dispatch);
 		  } else {
 				event_dispatched_on_complete = false;
@@ -217,13 +216,13 @@ void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, v
 		  //dispatch process switch
 			TIME += p_switch_overhead;
 			dispatch_time += p_switch_overhead;
-		  	Event p_switch("PROCESS_DISPATCH_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+		  	Event p_switch("PROCESS_DISPATCH_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true);
 			events.push(p_switch);
 			last_ptype = c_thd.getPType();
 		  } else {			
 			TIME += t_switch_overhead;
 			dispatch_time += t_switch_overhead;
-		  	Event t_switch("THREAD_DISPATCH_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+		  	Event t_switch("THREAD_DISPATCH_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true);
 			events.push(t_switch);
 		  }
 
@@ -234,28 +233,25 @@ void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, v
 		  Burst c_burst = c_thd.getTopBurst();
 		  int cpu = c_burst.getCPU();
 		  int io = c_burst.getIO();
-
 			if(cpu > QUANTUM) {
 				//going to dispatch a THREAD_PREEMPTED event, need to update Thread state
 				// c_thd.updateBurst(QUANTUM);
 				cpu = QUANTUM;
 				TIME += cpu;
 				service_time += cpu;
-				Event cpu_preempted("THREAD_PREEMPTED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+				Event cpu_preempted("THREAD_PREEMPTED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true);
 				events.push(cpu_preempted);		   
 				processes[c_thd.getPType()].updateThreadCPUTime(c_thd.getTID(), cpu);
-				processes[c_thd.getPType()].updateThreadState(c_thd.getTID(), "THREAD_BLOCKED");
-				cout << "CPU Burst before updateBurst: " << c_thd.getTopBurst().getCPU() << endl;
+				processes[c_thd.getPType()].updateThreadState(c_thd.getTID(), "READY");
 				c_thd.updateBurst(QUANTUM);
-				cout << "CPU Burst after updateBurst: " << c_thd.getTopBurst().getCPU() << endl;
-				fcfs.push(c_thd);
+				rr.push(c_thd);
 				//need to dispatch next thread upon preemption
 			} else {
 				//CPU_BURST_COMPLETED && IO_BURST_COMPLETED
 				c_burst = c_thd.getNextBurst();
 				cpu = c_burst.getCPU();
-				cpu = c_burst.getIO();
-		  
+				io = c_burst.getIO();
+
 					if(c_thd.getNumBursts() == 0) {
 						processes[c_thd.getPType()].updateThreadState(c_thd.getTID(), "THREAD_COMPLETED");
 									
@@ -263,21 +259,21 @@ void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, v
 									
 						TIME += cpu;
 						service_time += cpu;
-						Event t_complete("THREAD_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+						Event t_complete("THREAD_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true);
 						events.push(t_complete);
 					} else {
 					//create cpu_burst_completed and io_burst_completed events
 						TIME += cpu;
 						service_time += cpu;
-						Event cpu_complete("CPU_BURST_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+						Event cpu_complete("CPU_BURST_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true);
 						events.push(cpu_complete);		   
 						processes[c_thd.getPType()].updateThreadCPUTime(c_thd.getTID(), cpu);
 						TIME += io;
 						io_time += io;
-						Event io_complete("IO_BURST_COMPLETED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
+						Event io_complete("IO_BURST_COMPLETED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true);
 						events.push(io_complete);
 						processes[c_thd.getPType()].updateThreadIOTime(c_thd.getTID(), io);
-						fcfs.push(c_thd);
+						rr.push(c_thd);
 				} 
 			}
 			
@@ -286,26 +282,23 @@ void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, v
 		}
 		
 		Event curr = events.top();
-		cout << "Curr: " << curr << endl;
-		cout << "Event queue size: " << events.size() << endl;
 		events.pop();
+		
+		int NUM_THD_AV = 0;
+		NUM_THD_AV = getNumAvailableThreads(processes); 
 		//based on type of event needs to update time and state of thread
 		if(curr.getType() == "CPU_BURST_COMPLETED") {
 		  //whatever happens when a CPU burst completes
 		  thread_running = false;
 		  TIME = curr.getTime();
 		  processes[curr.getPType()].updateThreadState(curr.getTID(), "BLOCKED");	
-//		 if(processes[curr.getPType()].getThread(curr.getTID()).getResponseTime() == 0) {
-		  //update thread response time
-//		   processes[curr.getPType()].updateThreadResponseTime(curr.getTID(), TIME);
-//		}
 		
-		if(getNumAvailableThreads(processes) == 0) {
-			Event idle_next_event = events.top();
-			int beg_time = curr.getTime();
-			int end_time = idle_next_event.getTime();
-			idle_time += (end_time - beg_time);
-		  }
+			if(getNumAvailableThreads(processes) == 0) {
+				Event idle_next_event = events.top();
+				int beg_time = curr.getTime();
+				int end_time = idle_next_event.getTime();
+				idle_time += (end_time - beg_time);
+			}
 		} else if(curr.getType() == "THREAD_COMPLETED") {
 		  //thread completed, update time and thread state
 
@@ -315,21 +308,34 @@ void RR(queue<Thread> &fcfs, vector<Process> &processes, priority_queue<Event, v
 		  processes[curr.getPType()].updateThreadState(curr.getTID(), "EXIT");	
 		  
 		  processes[curr.getPType()].updateThreadEndTime(curr.getTID(), TIME);	
-		  
+		
 		if(getNumAvailableThreads(processes) > 0 && events.empty()) {
 		  	event_dispatched_on_complete = true;
-		  	c_thd = fcfs.front();
-			Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), getNumAvailableThreads(processes));
-			events.push(next_dispatch);
+		  	c_thd = rr.front();
+				Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true);
+				events.push(next_dispatch);
 		  }
+		} else if(curr.getType() == "THREAD_PREEMPTED") {
+			//handle THREAD_PREEMPTED event
+			thread_running = false;
+			TIME = curr.getTime();
+			processes[curr.getPType()].updateThreadState(curr.getTID(), "READY");
+			
+			if(getNumAvailableThreads(processes) > 0 && events.empty()) {
+		  	event_dispatched_on_complete = true;
+		  	c_thd = rr.front();
+				Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true);
+				events.push(next_dispatch);
+		  }
+
 		} else if(curr.getType() == "IO_BURST_COMPLETED") {
 		  if(getNumAvailableThreads(processes) < 1) {
 		    //going to handle idle time here potentially
 		    TIME = curr.getTime();
 		    
 		    event_dispatched_on_complete = true;
-		    c_thd = fcfs.front();
-		    Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), getNumAvailableThreads(processes));
+		    c_thd = rr.front();
+		    Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV, true);
 		    events.push(next_dispatch);
 		  }  
 		

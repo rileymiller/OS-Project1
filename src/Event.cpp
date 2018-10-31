@@ -46,21 +46,36 @@ const string Event::getMessage(string &type) {
 	  msg = ss.str();
 	  return msg;
 	} else if(type == "DISPATCHER_INVOKED") {
-	  ss << "THREAD " << this->tid << " in process " << this->pid << " [" << getProcessType(this->ptype) << "]" << endl << "	Selected from " << this->available_threads << "threads; will run to completion of burst";
+		if(preemp) {
+			ss << "THREAD " << this->tid << " in process " << this->pid << " [" << getProcessType(this->ptype) << "]" << endl << "	Selected from " << this->available_threads << " threads; will run for at most 3 ticks";
+	  	msg = ss.str();
+		} else {
+			ss << "THREAD " << this->tid << " in process " << this->pid << " [" << getProcessType(this->ptype) << "]" << endl << "	Selected from " << this->available_threads << " threads; will run to completion of burst";
+			msg = ss.str();
+		}
+	  return msg;
+	}	else if(type == "THREAD_PREEMPTED") {
+	  ss << "THREAD " << this->tid << " in process " << this->pid << " [" << getProcessType(this->ptype) << "]" << endl << "	Transitioned from RUNNING to READY";
 	  msg = ss.str();
 	  return msg;
 	}	
 	return "";
 }
 
-Event::Event(string type, int t, int tid, int pid, int ptype, int av_threads){
+Event::Event(string type, int t, int tid, int pid, int ptype, int av_threads, bool preemp){
 	this->type = type;
 	this->scheduled_time = t;
 	this->tid = tid;
 	this->pid = pid;
 	this->ptype = ptype;
-	this->message = getMessage(type);
+	if(av_threads > 0) {
 	this->available_threads = av_threads;
+	} else {
+		this->available_threads = 1;
+
+	} 
+	this->message = getMessage(type);
+	this->preemp = preemp;
 }
 
 const string Event::getType() {

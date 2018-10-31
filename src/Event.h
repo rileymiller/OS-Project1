@@ -16,7 +16,7 @@ class Event {
 	  const string getProcessType(int n);
 	  const string getMessage(string &type);
 	public:
-	  Event(string type, int t, int tid, int pid, int ptype, int av_threads);
+	  Event(string type, int t, int tid, int pid, int ptype, int av_threads, bool preemp = false);
 	  const string getType();
 	  const int getTime();
 	  const int getTID();
@@ -26,6 +26,7 @@ class Event {
 	  void setProcessType(int n);
 	  void setType(string type);
 	  void setTime(int t);
+	  bool preemp;
 	  bool operator<(const Event& a) const;
 	  friend ostream & operator <<(ostream &out, Event e);
 };
