@@ -870,7 +870,7 @@ int main(int argc, char** argv) {
 		fin >> cpu;
 		Burst last(cpu, 0);
 		t.addBurst(last);
-		t.setState("READY"); //thread READY when added to dispatcher
+		t.setState("NEW"); //thread READY when added to dispatcher
 		//read in last burst
 		p.addThread(t);//append thread to process
 		fcfs.push(t);
