@@ -105,7 +105,14 @@ int getNumAvailableThreads(vector<Process> &p) {
 	return count;
 }
 
-
+int priorityThreadReady(queue<Thread> &sys, queue<Thread> &intr,queue<Thread> &norm, queue<Thread> &batc) {
+	int count = 0; 
+	count += sys.size();
+	count += intr.size();
+	count += norm.size();
+	count += batc.size();
+	return count;
+}
 void printSimulationResults(vector<Process> &processes, int service_time, int io_time, int dispatch_time, int idle_time, int elapsed_time) {
 	
 	for(int i = 0; i < int(processes.size()); i++){ 
@@ -370,23 +377,39 @@ void RR(queue<Thread> &rr, vector<Process> &processes, priority_queue<Event, vec
 //gets next priority thread from queues
 Thread getNextPriorityThread(queue<Thread> &sys, queue<Thread> &intr, queue<Thread> &norm, queue<Thread> &batc) {
 	Thread ret(-1,-1,-1,-1, "");
+	Thread curr(-1,-1,-1,-1, "");
 	if(!sys.empty()) {
-		ret = sys.front();
-		sys.pop();
-		return ret;
-	} else if(!intr.empty()) {
-		ret = intr.front();
-		intr.pop();
-		return ret;
-	} else if(!norm.empty()) {
-		ret = norm.front();
-		norm.pop();
-		return ret;
-	} else if(!batc.empty()) {
-		ret = batc.front();
-		batc.pop();
-		return ret;
-	}
+		curr = sys.front();
+		if(curr.getState() == "READY"){
+			sys.pop();
+			return curr;
+		}
+	} 
+	
+	if(!intr.empty()) {
+		curr = intr.front();
+		if(curr.getState() == "READY"){
+			intr.pop();
+			return curr;
+		}
+	} 
+	
+	if(!norm.empty()) {
+		curr = norm.front();
+		if(curr.getState() == "READY"){
+			norm.pop();
+			return curr;
+		}
+	} 
+	
+	if(!batc.empty()) {
+		curr = batc.front();
+		if(curr.getState() == "READY") {
+			batc.pop();
+			return curr;
+		}
+		
+	} 
 
 	return ret;
 }
@@ -409,7 +432,6 @@ Thread peekNextPriorityThread(queue<Thread> &sys, queue<Thread> &intr, queue<Thr
 //reloads Thread into appropriate queue
 void ReloadThread(Thread &rel, queue<Thread> &sys, queue<Thread> &intr, queue<Thread> &norm, queue<Thread> &batc) {
 	int ptype = rel.getPType();
-	cout << "Thread " << rel.getTID() << " of process " << rel.getPType() << " with process id: " << rel.getPID() << " in RELOADTHREAD!!" << endl;
 	switch(ptype) {
 		case 0:
 			sys.push(rel);
@@ -426,6 +448,73 @@ void ReloadThread(Thread &rel, queue<Thread> &sys, queue<Thread> &intr, queue<Th
 	}
 }
 
+//need to update Thread state in Prioritization queues
+// void updateThdStateInQueue(int ptype, int tid, string state, queue<Thread> &sys, queue<Thread> &intr, queue<Thread> &norm, queue<Thread> &batc) {
+// 	cout << "in updateThdState, looking for process type: " << ptype << " with thd id: " << tid << endl;
+// 	queue<Thread> temp;
+// 	switch(ptype) {
+// 		case 0:
+// 			cout << "ptype was sys: " << ptype << endl;
+// 			while(!sys.empty()) {
+// 				Thread curr = sys.front();
+// 				sys.pop();
+// 				if(curr.getTID() == tid) {
+// 					cout << "Thd was id " << tid << endl;
+// 					curr.setState(state);
+// 					temp.push(curr);
+// 				} else {
+// 					temp.push(curr);
+// 				}
+// 			}
+// 			sys = temp;
+// 			break;
+// 		case 1:
+// 			cout << "ptype was intr: " << ptype << endl;
+// 			while(!intr.empty()) {
+// 				Thread curr = intr.front();
+// 				intr.pop();
+// 				if(curr.getTID() == tid) {
+// 					cout << "Thd was id " << tid << endl;
+// 					curr.setState(state);
+// 					temp.push(curr);
+// 				} else {
+// 					temp.push(curr);
+// 				}
+// 			}
+// 			intr = temp;
+// 			break;
+// 		case 2:
+// 			cout << "ptype was norm: " << ptype << endl;
+// 			while(!norm.empty()) {
+// 				Thread curr = norm.front();
+// 				norm.pop();
+// 				if(curr.getTID() == tid) {
+// 					cout << "Thd was id " << tid << endl;
+// 					curr.setState(state);
+// 					temp.push(curr);
+// 				} else {
+// 					temp.push(curr);
+// 				}
+// 			}
+// 			norm = temp;
+// 			break;
+// 		case 3:
+// 			cout << "ptype was batc: " << ptype << endl;
+// 			while(!sys.empty()) {
+// 				Thread curr = batc.front();
+// 				batc.pop();
+// 				if(curr.getTID() == tid) {
+// 					cout << "Thd was id " << tid << endl;
+// 					curr.setState(state);
+// 					temp.push(curr);
+// 				} else {
+// 					temp.push(curr);
+// 				}
+// 			}
+// 			batc = temp;
+// 			break;
+// 	}
+// }
 
 //implement Prioritization algorithm
 void Prioritization(vector<Process> &processes, priority_queue<Event, vector<Event>, less<Event>> &events, int TIME, int p_switch_overhead, int t_switch_overhead, bool VERBOSE, bool PER_THREAD) {
@@ -438,6 +527,8 @@ void Prioritization(vector<Process> &processes, priority_queue<Event, vector<Eve
 	int dispatch_time = 0;
 	int idle_time = 0;
 	bool event_dispatched_on_complete = false;
+	int num_thds = 0;
+	int compl_thds = 0;
 
 	queue<Thread> sys;
 	queue<Thread> intr;
@@ -445,39 +536,41 @@ void Prioritization(vector<Process> &processes, priority_queue<Event, vector<Eve
 	queue<Thread> batc;
 
 	//seed process queues
-	for(int i = 0; i < int(processes.size()); i++) {
-		if(i == 0) {
-			vector<Thread> p_thds = processes[i].getThreads();
-			for(int j = 0; j < int(p_thds.size()); j++) {
-				cout << "Thread " << p_thds[j].getTID() << " of ptype: " << p_thds[j].getPType() << endl; 
-				sys.push(p_thds[j]);
-			}
-		} else if(i == 1) {
-			vector<Thread> p_thds = processes[i].getThreads();
-			for(int j = 0; j < int(p_thds.size()); j++) {
-				intr.push(p_thds[j]);
-			}
-		} else if(i == 2) {
-			vector<Thread> p_thds = processes[i].getThreads();
-			for(int j = 0; j < int(p_thds.size()); j++) {
-				norm.push(p_thds[j]);
-			}
-		} else if(i == 3) {
-			vector<Thread> p_thds = processes[i].getThreads();
-			for(int j = 0; j < int(p_thds.size()); j++) {
-				batc.push(p_thds[j]);
-			}
-		}
-	}
+	// for(int i = 0; i < int(processes.size()); i++) {
+	// 	if(i == 0) {
+	// 		vector<Thread> p_thds = processes[i].getThreads();
+	// 		for(int j = 0; j < int(p_thds.size()); j++) {
+	// 			cout << "Thread " << p_thds[j].getTID() << " of ptype: " << p_thds[j].getPType() << endl; 
+	// 			sys.push(p_thds[j]);
+	// 		}
+	// 	} else if(i == 1) {
+	// 		vector<Thread> p_thds = processes[i].getThreads();
+	// 		for(int j = 0; j < int(p_thds.size()); j++) {
+	// 			cout << "Thread " << p_thds[j].getTID() << " of ptype: " << p_thds[j].getPType() << endl; 
+	// 			intr.push(p_thds[j]);
+	// 		}
+	// 	} else if(i == 2) {
+	// 		vector<Thread> p_thds = processes[i].getThreads();
+	// 		for(int j = 0; j < int(p_thds.size()); j++) {
+	// 			norm.push(p_thds[j]);
+	// 		}
+	// 	} else if(i == 3) {
+	// 		vector<Thread> p_thds = processes[i].getThreads();
+	// 		for(int j = 0; j < int(p_thds.size()); j++) {
+	// 			batc.push(p_thds[j]);
+	// 		}
+	// 	}
+	// }
 
 	while(!events.empty()) {
 		count++;
-		if(!thread_running && getNumAvailableThreads(processes)){
+		if(!thread_running && priorityThreadReady(sys,intr,norm,batc) > 0){
 		  
 			//get next thread from the queue
 		  c_thd = getNextPriorityThread(sys,intr,norm, batc);
+			// cout << "after c_thd retrieved in event loop, num available threads" << priorityThreadReady(sys,intr,norm,batc) << endl;
 		  int NUM_THD_AV = 0;
-		  NUM_THD_AV = getNumAvailableThreads(processes); 
+		  NUM_THD_AV = priorityThreadReady(sys,intr,norm,batc); 
 		  thread_running = true;
 		  
 		  if(!event_dispatched_on_complete) {
@@ -512,7 +605,7 @@ void Prioritization(vector<Process> &processes, priority_queue<Event, vector<Eve
 		    processes[c_thd.getPType()].updateThreadState(c_thd.getTID(), "THREAD_COMPLETED");
 		    		  
 		    processes[c_thd.getPType()].updateThreadCPUTime(c_thd.getTID(), cpu);
-      		    
+      	compl_thds++;
 		    TIME += cpu;
 		    service_time += cpu;
 		    Event t_complete("THREAD_COMPLETED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
@@ -529,7 +622,7 @@ void Prioritization(vector<Process> &processes, priority_queue<Event, vector<Eve
 				Event io_complete("IO_BURST_COMPLETED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), NUM_THD_AV);
 				events.push(io_complete);
 				processes[c_thd.getPType()].updateThreadIOTime(c_thd.getTID(), io);
-				//reloads thread if it still has bursts
+				//reloads thread if it still has bursts after IO completed
 				ReloadThread(c_thd,sys,intr,norm,batc);
 		} 
 			
@@ -550,7 +643,7 @@ void Prioritization(vector<Process> &processes, priority_queue<Event, vector<Eve
 //		   processes[curr.getPType()].updateThreadResponseTime(curr.getTID(), TIME);
 //		}
 		
-		if(getNumAvailableThreads(processes) == 0) {
+		if(priorityThreadReady(sys,intr,norm,batc) == 0) {
 			Event idle_next_event = events.top();
 			int beg_time = curr.getTime();
 			int end_time = idle_next_event.getTime();
@@ -566,21 +659,23 @@ void Prioritization(vector<Process> &processes, priority_queue<Event, vector<Eve
 		  
 		  processes[curr.getPType()].updateThreadEndTime(curr.getTID(), TIME);	
 		  
-		if(getNumAvailableThreads(processes) > 0 && events.empty()) {
+		if(priorityThreadReady(sys,intr,norm,batc) > 0 && events.empty()) {
 		  	event_dispatched_on_complete = true;
 				//may need logic to check if it returns a thread
+
 		  	c_thd = peekNextPriorityThread(sys,intr,norm,batc);
-				Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), getNumAvailableThreads(processes));
+				// cout << "Thread " << c_thd.getTID() << " of process " << c_thd.getPType() << " with process id: " << c_thd.getPID() << " when thds are available and events is empty." << endl;
+				Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(),c_thd.getPID(), c_thd.getPType(), priorityThreadReady(sys,intr,norm,batc));
 				events.push(next_dispatch);
 		  }
 		} else if(curr.getType() == "IO_BURST_COMPLETED") {
-		  if(getNumAvailableThreads(processes) < 1) {
+		  if(priorityThreadReady(sys,intr,norm,batc) < 1) {
 		    //going to handle idle time here potentially
 		    TIME = curr.getTime();
 		    
 		    event_dispatched_on_complete = true;
 		    c_thd = peekNextPriorityThread(sys,intr,norm,batc);
-		    Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), getNumAvailableThreads(processes));
+		    Event next_dispatch("DISPATCHER_INVOKED", TIME, c_thd.getTID(), c_thd.getPID(), c_thd.getPType(), priorityThreadReady(sys,intr,norm,batc));
 		    events.push(next_dispatch);
 		  }  
 		
@@ -594,14 +689,19 @@ void Prioritization(vector<Process> &processes, priority_queue<Event, vector<Eve
 		  processes[curr.getPType()].updateThreadResponseTime(curr.getTID(), curr.getTime());
 		  }
 		} else if(curr.getType() == "THREAD_ARRIVED") {
+			// cout << "adding Thd to queue now that it's ready" << endl;
+			// updateThdStateInQueue(curr.getPType(), curr.getTID(), "READY", sys, intr, norm, batc);
 			processes[curr.getPType()].updateThreadState(curr.getTID(), "READY");
+			Thread ready = processes[curr.getPType()].getThread(curr.getTID());
+			ReloadThread(ready, sys, intr, norm, batc);
+			num_thds++;
 		}
 		if(VERBOSE) {
 		  cout << curr << endl;
 		}
 
 	
-		if(isSimulationFinished(processes)) {
+		if(compl_thds == num_thds && events.empty()) {
 		  if(PER_THREAD) {
 	      	    printPerThread(processes);
 		  }

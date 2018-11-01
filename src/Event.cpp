@@ -46,9 +46,12 @@ const string Event::getMessage(string &type) {
 	  msg = ss.str();
 	  return msg;
 	} else if(type == "DISPATCHER_INVOKED") {
-		cout << "preemp in dispatcher invoked " << preemp << endl;
+		// cout << "preemp in dispatcher invoked " << preemp << endl;
 		if(preemp) {
 			ss << "THREAD " << this->tid << " in process " << this->pid << " [" << getProcessType(this->ptype) << "]" << endl << "	Selected from " << this->available_threads << " threads; will run for at most 3 ticks";
+	  	msg = ss.str();
+		} else if(prior_msg != "") {
+			ss << "THREAD " << this->tid << " in process " << this->pid << " [" << getProcessType(this->ptype) << "]" << endl << "	" << prior_msg;
 	  	msg = ss.str();
 		} else {
 			ss << "THREAD " << this->tid << " in process " << this->pid << " [" << getProcessType(this->ptype) << "]" << endl << "	Selected from " << this->available_threads << " threads; will run to completion of burst";
@@ -63,7 +66,7 @@ const string Event::getMessage(string &type) {
 	return "";
 }
 
-Event::Event(string type, int t, int tid, int pid, int ptype, int av_threads, bool preemp){
+Event::Event(string type, int t, int tid, int pid, int ptype, int av_threads, bool preemp, string prior_msg){
 	this->type = type;
 	this->scheduled_time = t;
 	this->tid = tid;
@@ -76,6 +79,7 @@ Event::Event(string type, int t, int tid, int pid, int ptype, int av_threads, bo
 
 	} 
 	this->preemp = preemp;
+	this->prior_msg = prior_msg;
 	this->message = getMessage(type);
 
 }

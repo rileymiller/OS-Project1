@@ -13,10 +13,11 @@ class Event {
 	  int ptype;
 	  int pid;
 	  int available_threads;
+	  string prior_msg;
 	  const string getProcessType(int n);
 	  const string getMessage(string &type);
 	public:
-	  Event(string type, int t, int tid, int pid, int ptype, int av_threads, bool preemp = false);
+	  Event(string type, int t, int tid, int pid, int ptype, int av_threads, bool preemp = false, string prior_msg = "");
 	  const string getType();
 	  const int getTime();
 	  const int getTID();
